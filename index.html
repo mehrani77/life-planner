@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#062544" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Life OS" />
+    <title>Life OS Planner</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="assets/icon-192.png" />
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar" aria-label="ناوبری">
+        <div class="workspace-switcher">
+          <div class="workspace-mark" aria-hidden="true">L</div>
+          <div>
+            <strong>Life OS</strong>
+            <span>برنامه ریزی شخصی</span>
+          </div>
+        </div>
+
+        <button class="quick-add" id="quickAddBtn" type="button">
+          <span class="icon" data-icon="plus"></span>
+          افزودن سریع
+        </button>
+
+        <nav class="nav-list" id="navList">
+          <button class="nav-item is-active" type="button" data-view="dashboard">
+            <span class="icon" data-icon="home"></span>
+            داشبورد
+          </button>
+          <button class="nav-item" type="button" data-view="today">
+            <span class="icon" data-icon="check"></span>
+            امروز
+          </button>
+          <button class="nav-item" type="button" data-view="month">
+            <span class="icon" data-icon="calendar"></span>
+            ماهانه
+          </button>
+          <button class="nav-item" type="button" data-view="year">
+            <span class="icon" data-icon="target"></span>
+            سالانه
+          </button>
+          <button class="nav-item" type="button" data-view="calendar">
+            <span class="icon" data-icon="grid"></span>
+            تقویم
+          </button>
+          <button class="nav-item" type="button" data-view="notes">
+            <span class="icon" data-icon="file"></span>
+            یادداشت ها
+          </button>
+        </nav>
+
+        <section class="sidebar-section">
+          <div class="section-label">فضاها</div>
+          <div class="space-list" id="spaceList"></div>
+        </section>
+
+        <section class="sidebar-section sidebar-actions">
+          <button class="ghost-button" id="exportBtn" type="button">
+            <span class="icon" data-icon="download"></span>
+            خروجی
+          </button>
+          <label class="ghost-button file-button" for="importFile">
+            <span class="icon" data-icon="upload"></span>
+            ورودی
+          </label>
+          <input id="importFile" type="file" accept="application/json" hidden />
+        </section>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <button class="icon-button" id="menuBtn" type="button" aria-label="باز کردن منو">
+            <span class="icon" data-icon="menu"></span>
+          </button>
+          <div class="search-wrap">
+            <span class="icon" data-icon="search"></span>
+            <input id="searchInput" type="search" placeholder="جستجو در تسک ها، هدف ها و یادداشت ها" autocomplete="off" />
+          </div>
+          <button class="icon-button" id="themeBtn" type="button" aria-label="تغییر تم">
+            <span class="icon" data-icon="moon"></span>
+          </button>
+        </header>
+
+        <section class="page" id="appRoot" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <div class="bottom-tabs" id="bottomTabs" aria-label="ناوبری پایین">
+      <button class="bottom-tab is-active" type="button" data-view="dashboard">
+        <span class="icon" data-icon="home"></span>
+        <span>خانه</span>
+      </button>
+      <button class="bottom-tab" type="button" data-view="today">
+        <span class="icon" data-icon="check"></span>
+        <span>امروز</span>
+      </button>
+      <button class="bottom-tab" type="button" data-view="month">
+        <span class="icon" data-icon="calendar"></span>
+        <span>ماه</span>
+      </button>
+      <button class="bottom-tab" type="button" data-view="year">
+        <span class="icon" data-icon="target"></span>
+        <span>سال</span>
+      </button>
+    </div>
+
+    <dialog class="modal" id="quickModal">
+      <form method="dialog" class="modal-panel" id="quickForm">
+        <div class="modal-head">
+          <div>
+            <span class="eyebrow">Quick Add</span>
+            <h2>افزودن آیتم جدید</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="بستن">
+            <span class="icon" data-icon="x"></span>
+          </button>
+        </div>
+        <label>
+          عنوان
+          <input id="quickTitle" name="title" required placeholder="مثلا: مرور برنامه هفته" />
+        </label>
+        <label>
+          نوع
+          <select id="quickType" name="type">
+            <option value="task">تسک روزانه</option>
+            <option value="monthlyGoal">هدف ماهانه</option>
+            <option value="yearlyGoal">هدف سالانه</option>
+            <option value="note">یادداشت</option>
+          </select>
+        </label>
+        <div class="modal-grid">
+          <label>
+            تاریخ
+            <input id="quickDue" name="due" type="date" />
+          </label>
+          <label>
+            ساعت
+            <input id="quickTime" name="time" type="time" />
+          </label>
+        </div>
+        <label>
+          توضیح کوتاه
+          <textarea id="quickNote" name="note" rows="3" placeholder="جزئیات، لینک، یا نکته مهم"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button class="secondary-button" type="button" data-close-modal>لغو</button>
+          <button class="primary-button" type="submit">ذخیره</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <template id="icons">
+      <svg data-name="home" viewBox="0 0 24 24"><path d="M3 10.8 12 4l9 6.8V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1v-9.2Z"/></svg>
+      <svg data-name="check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg>
+      <svg data-name="calendar" viewBox="0 0 24 24"><path d="M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/></svg>
+      <svg data-name="target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 12h.01"/></svg>
+      <svg data-name="grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
+      <svg data-name="file" viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>
+      <svg data-name="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      <svg data-name="mic" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></svg>
+      <svg data-name="download" viewBox="0 0 24 24"><path d="M12 4v10M8 10l4 4 4-4M5 20h14"/></svg>
+      <svg data-name="upload" viewBox="0 0 24 24"><path d="M12 20V10M8 14l4-4 4 4M5 4h14"/></svg>
+      <svg data-name="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+      <svg data-name="menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      <svg data-name="moon" viewBox="0 0 24 24"><path d="M20 15.2A8 8 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2Z"/></svg>
+      <svg data-name="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg data-name="x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      <svg data-name="trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"/></svg>
+      <svg data-name="edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13 7 4 4"/></svg>
+      <svg data-name="copy" viewBox="0 0 24 24"><path d="M8 8h11v11H8z"/><path d="M5 16H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+      <svg data-name="more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg>
+    </template>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
