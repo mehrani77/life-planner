@@ -1,11 +1,13 @@
-const CACHE_NAME = "life-os-planner-v4";
+const CACHE_NAME = "life-os-planner-v5";
 const APP_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./manifest.webmanifest",
-  "./assets/icon.svg"
+  "./assets/icon.svg",
+  "./assets/icon-192.png",
+  "./assets/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {

@@ -83,6 +83,10 @@
             <span class="icon" data-icon="search"></span>
             <input id="searchInput" type="search" placeholder="جستجو در تسک ها، هدف ها و یادداشت ها" autocomplete="off" />
           </div>
+          <button class="top-quick-add" id="topQuickAddBtn" type="button" aria-label="افزودن سریع">
+            <span class="icon" data-icon="plus"></span>
+            <span>تسک جدید</span>
+          </button>
           <button class="icon-button" id="themeBtn" type="button" aria-label="تغییر تم">
             <span class="icon" data-icon="moon"></span>
           </button>
@@ -104,6 +108,10 @@
       <button class="bottom-tab" type="button" data-view="month">
         <span class="icon" data-icon="calendar"></span>
         <span>ماه</span>
+      </button>
+      <button class="bottom-tab" type="button" data-view="calendar">
+        <span class="icon" data-icon="calendar"></span>
+        <span>تقویم</span>
       </button>
       <button class="bottom-tab" type="button" data-view="year">
         <span class="icon" data-icon="target"></span>
@@ -144,6 +152,10 @@
             ساعت
             <input id="quickTime" name="time" type="time" />
           </label>
+          <label>
+            مدت
+            <input id="quickDuration" name="duration" type="number" min="5" step="5" value="60" />
+          </label>
         </div>
         <label>
           توضیح کوتاه
@@ -152,6 +164,33 @@
         <div class="modal-actions">
           <button class="secondary-button" type="button" data-close-modal>لغو</button>
           <button class="primary-button" type="submit">ذخیره</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="voiceModal">
+      <form method="dialog" class="modal-panel" id="voiceForm">
+        <div class="modal-head">
+          <div>
+            <span class="eyebrow">Voice Task</span>
+            <h2>ساخت تسک با صدا</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="بستن">
+            <span class="icon" data-icon="x"></span>
+          </button>
+        </div>
+        <input id="voiceTargetId" name="targetId" type="hidden" />
+        <label>
+          متن تسک
+          <textarea id="voiceText" rows="4" placeholder="مثلا: عنوان تماس با علی برای فردا ساعت ۱۴:۳۰ مدت ۳۰ دقیقه اولویت بالا حوزه کار توضیح پیگیری قرارداد"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button class="secondary-button" type="button" id="voiceListenBtn">
+            <span class="icon" data-icon="mic"></span>
+            ضبط صدا
+          </button>
+          <button class="secondary-button" type="button" data-close-modal>لغو</button>
+          <button class="primary-button" type="submit">ساخت تسک</button>
         </div>
       </form>
     </dialog>

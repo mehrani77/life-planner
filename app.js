@@ -5,8 +5,14 @@ const bottomTabs = document.getElementById("bottomTabs");
 const sidebar = document.getElementById("sidebar");
 const menuBtn = document.getElementById("menuBtn");
 const quickAddBtn = document.getElementById("quickAddBtn");
+const topQuickAddBtn = document.getElementById("topQuickAddBtn");
 const quickModal = document.getElementById("quickModal");
 const quickForm = document.getElementById("quickForm");
+const voiceModal = document.getElementById("voiceModal");
+const voiceForm = document.getElementById("voiceForm");
+const voiceText = document.getElementById("voiceText");
+const voiceTargetId = document.getElementById("voiceTargetId");
+const voiceListenBtn = document.getElementById("voiceListenBtn");
 const toast = document.getElementById("toast");
 const searchInput = document.getElementById("searchInput");
 const themeBtn = document.getElementById("themeBtn");
@@ -90,6 +96,10 @@ quickAddBtn.addEventListener("click", () => {
   openQuickModal();
 });
 
+topQuickAddBtn.addEventListener("click", () => {
+  openQuickModal();
+});
+
 quickForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const formData = new FormData(quickForm);
@@ -98,19 +108,43 @@ quickForm.addEventListener("submit", (event) => {
   const note = String(formData.get("note") || "").trim();
   const due = String(formData.get("due") || "").trim();
   const time = String(formData.get("time") || "").trim();
+  const duration = Number(formData.get("duration")) || 60;
   if (!title) return;
-  addQuickItem(type, title, note, { due, time });
+  addQuickItem(type, title, note, { due, time, duration });
   quickForm.reset();
-  quickModal.close();
+  closeModal(quickModal);
   showToast("ذخیره شد");
 });
 
 quickModal.addEventListener("click", (event) => {
-  if (event.target === quickModal) quickModal.close();
+  if (event.target === quickModal) closeModal(quickModal);
+});
+
+voiceModal.addEventListener("click", (event) => {
+  if (event.target === voiceModal) closeModal(voiceModal);
 });
 
 document.querySelectorAll("[data-close-modal]").forEach((button) => {
-  button.addEventListener("click", () => quickModal.close());
+  button.addEventListener("click", () => {
+    const modal = button.closest("dialog");
+    if (modal) closeModal(modal);
+  });
+});
+
+voiceForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const text = voiceText.value.trim();
+  if (!text) {
+    showToast("اول متن تسک را بگو یا بنویس");
+    return;
+  }
+  applyVoiceTask(text, voiceTargetId.value || null);
+  voiceForm.reset();
+  closeModal(voiceModal);
+});
+
+voiceListenBtn.addEventListener("click", () => {
+  listenIntoVoiceModal();
 });
 
 themeBtn.addEventListener("click", () => {
@@ -156,7 +190,7 @@ importFile.addEventListener("change", async () => {
   }
 });
 
-root.addEventListener("click", (event) => {
+document.addEventListener("click", (event) => {
   const action = event.target.closest("[data-action]");
   if (!action) return;
 
@@ -166,6 +200,9 @@ root.addEventListener("click", (event) => {
   switch (action.dataset.action) {
     case "add-task":
       addTask();
+      break;
+    case "add-task-for-date":
+      addTask({ due: action.dataset.date || todayISO() });
       break;
     case "add-voice-task":
       startVoiceTask();
@@ -208,6 +245,11 @@ root.addEventListener("click", (event) => {
       break;
     case "open-view":
       setView(action.dataset.view);
+      break;
+    case "open-calendar-day":
+      state.ui.selectedCalendarDate = action.dataset.date || todayISO();
+      saveState();
+      render();
       break;
     case "toggle-habit":
       toggleHabit(id, action.dataset.day);
@@ -430,7 +472,7 @@ function renderPriorityLines(tasks) {
 }
 
 function renderScheduleRows() {
-  const hours = Array.from({ length: 17 }, (_, index) => `${String(index + 6).padStart(2, "0")}:00`);
+  const hours = Array.from({ length: 24 }, (_, index) => `${String(index).padStart(2, "0")}:00`);
   const scheduledTasks = state.tasks
     .filter((task) => task.status !== "done" && task.due === todayISO() && isTime(task.time))
     .sort((a, b) => a.time.localeCompare(b.time));
@@ -442,7 +484,7 @@ function renderScheduleRows() {
         return `
         <div class="schedule-row">
           <time>${hour}</time>
-          <span>${items.map((task) => `${escapeHTML(task.time)} - ${escapeHTML(task.title)}`).join("، ")}</span>
+          <span>${items.map((task) => `${escapeHTML(task.time)} (${formatDuration(task.duration)}) - ${escapeHTML(task.title)}`).join("، ")}</span>
         </div>
       `;
       }).join("")}
@@ -489,6 +531,10 @@ function renderFocusTasks(tasks, doneToday, totalToday) {
               <span>ساعت دقیق</span>
               <input type="time" data-field="time" data-type="task" data-id="${task.id}" value="${escapeAttr(task.time || "")}" />
             </label>
+            <label class="focus-time-field">
+              <span>مدت</span>
+              <input type="number" min="5" step="5" data-field="duration" data-type="task" data-id="${task.id}" value="${escapeAttr(task.duration || 60)}" />
+            </label>
             <p>یادداشت / نکته:</p>
             <div class="dotted-line">${escapeHTML(priorityMap[task.priority]?.label || "")}</div>
             <div class="dotted-line">${escapeHTML(areaMap[task.area]?.label || "")}</div>
@@ -500,38 +546,39 @@ function renderFocusTasks(tasks, doneToday, totalToday) {
 }
 
 function renderGoalLines() {
-  const goals = state.monthlyGoals.slice(0, 5);
+  const plan = getDailyPlan(todayISO());
   return `
-    <div class="goal-lines">
-      ${Array.from({ length: 5 }, (_, index) => `
-        <div><span></span><p>${escapeHTML(goals[index]?.title || "")}</p></div>
+    <div class="editable-stack">
+      ${[0, 1, 2].map((index) => `
+        <label class="check-input-line">
+          <span></span>
+          <input data-type="dailyPlan" data-date="${todayISO()}" data-field="goal${index + 1}" value="${escapeAttr(plan[`goal${index + 1}`] || "")}" placeholder="هدف ${index + 1}" />
+        </label>
       `).join("")}
     </div>
   `;
 }
 
 function renderLearnImprove() {
-  const learningTask = state.tasks.find((task) => task.area === "learning") || state.tasks[0];
+  const plan = getDailyPlan(todayISO());
   return `
-    <div class="planner-lined-text">
+    <div class="planner-lined-text editable-stack">
       <label>امروز یاد می گیرم:</label>
-      <p>${escapeHTML(learningTask?.title || "")}</p>
-      <p></p>
+      <textarea data-type="dailyPlan" data-date="${todayISO()}" data-field="learn" rows="2" placeholder="چی یاد گرفتی؟">${escapeHTML(plan.learn || "")}</textarea>
       <label>منبع / مرجع:</label>
-      <p>${escapeHTML(learningTask?.note || "")}</p>
+      <input data-type="dailyPlan" data-date="${todayISO()}" data-field="source" value="${escapeAttr(plan.source || "")}" placeholder="کتاب، لینک، کلاس..." />
     </div>
   `;
 }
 
 function renderChallenges() {
-  const hardTask = state.tasks.slice().sort((a, b) => priorityWeight(b.priority) - priorityWeight(a.priority))[0];
+  const plan = getDailyPlan(todayISO());
   return `
-    <div class="planner-lined-text">
+    <div class="planner-lined-text editable-stack">
       <label>چالش های امروز:</label>
-      <p>${escapeHTML(hardTask?.title || "")}</p>
-      <p></p>
+      <textarea data-type="dailyPlan" data-date="${todayISO()}" data-field="challenge" rows="2" placeholder="مانع اصلی امروز">${escapeHTML(plan.challenge || "")}</textarea>
       <label>راه حل ها:</label>
-      <p>${escapeHTML(hardTask?.note || "")}</p>
+      <textarea data-type="dailyPlan" data-date="${todayISO()}" data-field="solution" rows="2" placeholder="راه حل عملی">${escapeHTML(plan.solution || "")}</textarea>
     </div>
   `;
 }
@@ -555,14 +602,15 @@ function renderPlannerHabitTracker() {
 }
 
 function renderDailyReview() {
+  const plan = getDailyPlan(todayISO());
   return `
-    <div class="planner-lined-text review-lines">
+    <div class="planner-lined-text review-lines editable-stack">
       <label>چه چیزی خوب پیش رفت؟</label>
-      <p></p>
+      <textarea data-type="dailyPlan" data-date="${todayISO()}" data-field="wentWell" rows="2">${escapeHTML(plan.wentWell || "")}</textarea>
       <label>چه چیزی می تواند بهتر شود؟</label>
-      <p></p>
+      <textarea data-type="dailyPlan" data-date="${todayISO()}" data-field="improve" rows="2">${escapeHTML(plan.improve || "")}</textarea>
       <label>تمرکز فردا:</label>
-      <p>${escapeHTML(state.tasks.find((task) => task.status !== "done")?.title || "")}</p>
+      <input data-type="dailyPlan" data-date="${todayISO()}" data-field="tomorrowFocus" value="${escapeAttr(plan.tomorrowFocus || "")}" />
     </div>
   `;
 }
@@ -583,14 +631,41 @@ function formatDateDigits(iso) {
 function renderMonth() {
   const month = new Date().getMonth();
   const year = new Date().getFullYear();
-  const monthGoals = state.monthlyGoals;
-  const monthTasks = state.tasks.filter((task) => {
-    const date = parseISO(task.due);
-    return date.getMonth() === month && date.getFullYear() === year;
-  });
+  const monthTasks = state.tasks.filter((task) => taskDateInMonth(task, year, month));
+  const done = completedTasks(monthTasks);
+  const basis = done.length ? done : monthTasks;
+  const stats = taskStats(basis);
+  const total = sumMinutes(basis);
+  const weeks = monthWeekStats(monthTasks, year, month);
 
   return `
-    ${pageHeader("Monthly Operating System", "برنامه ماهانه", "هدف های ماه، شاخص پیشرفت، عادت ها و تسک های مهم این ماه در یک نگاه.")}
+    ${pageHeader("Monthly Report", "گزارش ماهانه", "تحلیل زمان کارهای روزانه، هدف ماهانه و اینکه بیشتر وقتت کجا خرج شده است.")}
+    <div class="insight-grid">
+      ${metric("زمان ثبت شده", formatTotalDuration(total))}
+      ${metric("تسک های انجام شده", done.length)}
+      ${metric("کار غالب", topStatLabel(stats))}
+      ${metric("میانگین هر تسک", basis.length ? formatTotalDuration(Math.round(total / basis.length)) : "۰س")}
+    </div>
+    <div class="analytics-grid">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>تقسیم زمان ماه</h2>
+            <small>${monthNames[month]} ${year}</small>
+          </div>
+        </div>
+        ${renderDonutChart(stats)}
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>هفته های ماه</h2>
+            <small>بر اساس مدت تسک ها</small>
+          </div>
+        </div>
+        ${renderBarList(weeks)}
+      </section>
+    </div>
     <div class="database-toolbar">
       <button class="primary-button" type="button" data-action="add-monthly-goal">
         <span class="icon" data-icon="plus"></span>
@@ -601,44 +676,65 @@ function renderMonth() {
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h2>هدف های این ماه</h2>
-            <small>${monthNames[month]} ${year}</small>
+            <h2>هدف های ماهانه</h2>
+            <small>قابل ویرایش</small>
           </div>
         </div>
         <div class="block-list">
-          ${monthGoals.length ? monthGoals.map(renderMonthlyGoal).join("") : emptyState("هدف ماهانه اضافه کن.")}
+          ${state.monthlyGoals.length ? state.monthlyGoals.map(renderMonthlyGoal).join("") : emptyState("هدف ماهانه اضافه کن.")}
         </div>
       </section>
 
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h2>ردیاب عادت ها</h2>
-            <small>۳۰ خانه اخیر</small>
+            <h2>کارهای پرزمان</h2>
+            <small>از داده های همین ماه</small>
           </div>
         </div>
-        ${renderHabits()}
+        ${renderTopTasks(basis)}
       </section>
     </div>
-
-    <section class="panel" style="margin-top:14px">
-      <div class="panel-head">
-        <div>
-          <h2>تسک های ماه</h2>
-          <small>${monthTasks.length} مورد</small>
-        </div>
-        <button class="secondary-button" type="button" data-action="open-view" data-view="today">مدیریت دیتابیس</button>
-      </div>
-      <div class="block-list">
-        ${monthTasks.length ? monthTasks.slice(0, 8).map(renderTaskBlock).join("") : emptyState("برای این ماه تسکی ثبت نشده است.")}
-      </div>
-    </section>
   `;
 }
 
 function renderYear() {
+  const year = new Date().getFullYear();
+  const yearTasks = state.tasks.filter((task) => taskDateInYear(task, year));
+  const done = completedTasks(yearTasks);
+  const basis = done.length ? done : yearTasks;
+  const stats = taskStats(basis);
+  const total = sumMinutes(basis);
+  const plan = getYearPlan(year);
   return `
-    ${pageHeader("Yearly Roadmap", "برنامه سالانه", "اهداف بزرگ را به فصل ها، قدم های قابل اندازه گیری و پیشرفت روشن تبدیل کن.")}
+    ${pageHeader("Yearly Report", "گزارش سالانه", "جمع بندی ماه ها، حوزه های پرزمان، هدف های سالانه و چند شاخص مهم برای مسیر سال.")}
+    <div class="insight-grid">
+      ${metric("زمان کل سال", formatTotalDuration(total))}
+      ${metric("تسک های انجام شده", done.length)}
+      ${metric("کار اصلی", topStatLabel(stats))}
+      ${metric("بهترین ماه", bestMonthLabel(yearTasks, year))}
+    </div>
+    <div class="analytics-grid">
+      <section class="panel">
+        <div class="panel-head"><div><h2>تقسیم زمان سال</h2><small>${year}</small></div></div>
+        ${renderDonutChart(stats)}
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><h2>روند ماهانه</h2><small>جمع مدت هر ماه</small></div></div>
+        ${renderBarList(yearMonthStats(yearTasks))}
+      </section>
+    </div>
+    <section class="panel annual-panel">
+      <div class="panel-head"><div><h2>شاخص های لازم سالانه</h2><small>قابل ویرایش</small></div></div>
+      <div class="annual-grid">
+        ${annualInput("annualFocus", "تمرکز اصلی سال", plan.annualFocus)}
+        ${annualInput("healthGoal", "سلامت", plan.healthGoal)}
+        ${annualInput("financeGoal", "مالی", plan.financeGoal)}
+        ${annualInput("learningGoal", "یادگیری", plan.learningGoal)}
+        ${annualInput("relationshipGoal", "روابط", plan.relationshipGoal)}
+        ${annualInput("review", "مرور سال", plan.review, true)}
+      </div>
+    </section>
     <div class="database-toolbar">
       <button class="primary-button" type="button" data-action="add-yearly-goal">
         <span class="icon" data-icon="plus"></span>
@@ -651,10 +747,108 @@ function renderYear() {
   `;
 }
 
+function renderDonutChart(stats) {
+  if (!stats.length) return emptyState("برای نمودار، تسک زمان دار ثبت کن یا تسکی را انجام شده بزن.");
+  const total = stats.reduce((sum, item) => sum + item.minutes, 0);
+  let cursor = 0;
+  const slices = stats.map((item) => {
+    const start = cursor;
+    const size = (item.minutes / total) * 100;
+    cursor += size;
+    return `${item.color} ${start}% ${cursor}%`;
+  }).join(", ");
+  return `
+    <div class="donut-wrap">
+      <div class="donut" style="--slices:${slices}">
+        <strong>${formatTotalDuration(total)}</strong>
+        <span>جمع زمان</span>
+      </div>
+      <div class="chart-legend">
+        ${stats.map((item) => `
+          <div><i style="background:${item.color}"></i><span>${escapeHTML(item.label)}</span><b>${formatTotalDuration(item.minutes)}</b></div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderBarList(items) {
+  const max = Math.max(1, ...items.map((item) => item.minutes));
+  return `
+    <div class="bar-list">
+      ${items.map((item) => `
+        <div class="bar-row">
+          <span>${escapeHTML(item.label)}</span>
+          <div><i style="width:${Math.round((item.minutes / max) * 100)}%"></i></div>
+          <b>${formatTotalDuration(item.minutes)}</b>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderTopTasks(tasks) {
+  const grouped = new Map();
+  tasks.forEach((task) => {
+    const current = grouped.get(task.title) || { title: task.title, minutes: 0, count: 0 };
+    current.minutes += taskMinutes(task);
+    current.count += 1;
+    grouped.set(task.title, current);
+  });
+  const top = Array.from(grouped.values()).sort((a, b) => b.minutes - a.minutes).slice(0, 6);
+  if (!top.length) return emptyState("هنوز کاری برای این بازه ثبت نشده است.");
+  return `
+    <div class="top-task-list">
+      ${top.map((item, index) => `
+        <div>
+          <b>${index + 1}</b>
+          <span>${escapeHTML(item.title)}</span>
+          <strong>${formatTotalDuration(item.minutes)}</strong>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function monthWeekStats(tasks, year, month) {
+  return Array.from({ length: 5 }, (_, index) => {
+    const weekTasks = tasks.filter((task) => {
+      const day = parseISO(task.due).getDate();
+      return Math.floor((day - 1) / 7) === index;
+    });
+    return { label: `هفته ${index + 1}`, minutes: sumMinutes(weekTasks) };
+  });
+}
+
+function yearMonthStats(tasks) {
+  return monthNames.map((label, index) => ({
+    label,
+    minutes: sumMinutes(tasks.filter((task) => parseISO(task.due).getMonth() === index))
+  }));
+}
+
+function bestMonthLabel(tasks, year) {
+  const months = yearMonthStats(tasks, year);
+  const best = months.slice().sort((a, b) => b.minutes - a.minutes)[0];
+  return best?.minutes ? best.label : "هنوز داده ای نیست";
+}
+
+function annualInput(field, label, value, multiline = false) {
+  return `
+    <label>
+      <span>${label}</span>
+      ${multiline
+        ? `<textarea data-type="yearPlan" data-field="${field}" rows="3">${escapeHTML(value || "")}</textarea>`
+        : `<input data-type="yearPlan" data-field="${field}" value="${escapeAttr(value || "")}" />`}
+    </label>
+  `;
+}
+
 function renderCalendar() {
   const today = new Date();
   const year = today.getFullYear();
   const month = today.getMonth();
+  const selectedDate = isISODate(state.ui.selectedCalendarDate) ? state.ui.selectedCalendarDate : todayISO();
   const first = new Date(year, month, 1);
   const startOffset = (first.getDay() + 1) % 7;
   const start = new Date(year, month, 1 - startOffset);
@@ -671,9 +865,10 @@ function renderCalendar() {
         ${weekDays.map((day) => `<span>${day}</span>`).join("")}
       </div>
       <div class="calendar-grid">
-        ${days.map((day) => renderCalendarDay(day, month)).join("")}
+        ${days.map((day) => renderCalendarDay(day, month, selectedDate)).join("")}
       </div>
     </section>
+    ${renderSelectedCalendarDay(selectedDate)}
   `;
 }
 
@@ -750,6 +945,7 @@ function renderTaskTable(tasks) {
               <th>حوزه</th>
               <th>تاریخ</th>
               <th>ساعت</th>
+              <th>مدت</th>
               <th>یادداشت</th>
               <th></th>
             </tr>
@@ -780,6 +976,9 @@ function renderTaskTable(tasks) {
                 </td>
                 <td>
                   <input class="plain-input time-input" type="time" data-field="time" data-type="task" data-id="${task.id}" value="${escapeAttr(task.time || "")}" />
+                </td>
+                <td>
+                  <input class="plain-input duration-input" type="number" min="5" step="5" data-field="duration" data-type="task" data-id="${task.id}" value="${escapeAttr(task.duration || 60)}" />
                 </td>
                 <td>
                   <input class="plain-input" data-field="note" data-type="task" data-id="${task.id}" value="${escapeAttr(task.note || "")}" placeholder="جزئیات" />
@@ -824,6 +1023,7 @@ function renderTaskBoard(tasks) {
                   ${tag(priorityMap[task.priority].label, priorityMap[task.priority].tone)}
                   ${tag(areaMap[task.area].label, "neutral")}
                   ${task.time ? tag(task.time, "gold") : ""}
+                  ${tag(formatDuration(task.duration), "neutral")}
                   ${tag(formatShortDate(task.due), "blue")}
                 </div>
                 <select class="plain-select" data-field="status" data-type="task" data-id="${task.id}">
@@ -852,6 +1052,7 @@ function renderTaskBlock(task) {
         ${tag(priority.label, priority.tone)}
         ${tag(areaMap[task.area]?.label || "عمومی", "neutral")}
         ${task.time ? tag(task.time, "gold") : ""}
+        ${tag(formatDuration(task.duration), "neutral")}
         ${tag(formatShortDate(task.due), "blue")}
       </div>
       ${task.note ? `<small>${escapeHTML(task.note)}</small>` : ""}
@@ -924,23 +1125,53 @@ function renderYearlyGoal(goal) {
   `;
 }
 
-function renderCalendarDay(day, activeMonth) {
+function renderCalendarDay(day, activeMonth, selectedDate) {
   const iso = toISO(day);
   const events = tasksForDate(iso).slice(0, 3);
   const classes = [
     "calendar-day",
     day.getMonth() !== activeMonth ? "is-muted" : "",
-    iso === todayISO() ? "is-today" : ""
+    iso === todayISO() ? "is-today" : "",
+    iso === selectedDate ? "is-selected" : ""
   ].filter(Boolean).join(" ");
 
   return `
-    <div class="${classes}">
+    <button class="${classes}" type="button" data-action="open-calendar-day" data-date="${iso}" aria-label="دیدن تسک های ${formatShortDate(iso)}">
       <div class="day-number">
         <span>${day.getDate()}</span>
         ${events.length ? `<small>${events.length}</small>` : ""}
       </div>
       ${events.map((task) => `<span class="event-pill">${task.time ? `${escapeHTML(task.time)} ` : ""}${escapeHTML(task.title)}</span>`).join("")}
-    </div>
+    </button>
+  `;
+}
+
+function renderSelectedCalendarDay(date) {
+  const tasks = tasksForDate(date).sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99"));
+  return `
+    <section class="panel calendar-detail">
+      <div class="panel-head">
+        <div>
+          <h2>${formatShortDate(date)}</h2>
+          <small>${tasks.length ? `${tasks.length} تسک ثبت شده` : "برای این روز هنوز تسکی نیست"}</small>
+        </div>
+        <button class="primary-button" type="button" data-action="add-task-for-date" data-date="${date}">
+          <span class="icon" data-icon="plus"></span>
+          تسک این روز
+        </button>
+      </div>
+      <div class="calendar-task-list">
+        ${tasks.length ? tasks.map((task) => `
+          <article class="calendar-task">
+            <button class="planner-check ${task.status === "done" ? "is-checked" : ""}" type="button" data-action="toggle-task-done" data-id="${task.id}" aria-label="انجام شد"></button>
+            <div>
+              <strong>${escapeHTML(task.title)}</strong>
+              <span>${task.time ? `${escapeHTML(task.time)} / ` : ""}${formatDuration(task.duration)} / ${escapeHTML(areaMap[task.area]?.label || "شخصی")}</span>
+            </div>
+          </article>
+        `).join("") : emptyState("از دکمه بالا برای همین تاریخ تسک بساز.")}
+      </div>
+    </section>
   `;
 }
 
@@ -1048,6 +1279,7 @@ function createTaskDraft(overrides = {}) {
     area: "personal",
     due: todayISO(),
     time: "",
+    duration: 60,
     note: "",
     ...overrides
   };
@@ -1062,17 +1294,24 @@ function addTask(overrides = {}) {
 }
 
 function startVoiceTask(taskId = null) {
+  voiceTargetId.value = taskId || "";
+  voiceText.value = "";
+  openModal(voiceModal);
+  voiceText.focus();
+  if (!SpeechRecognition) showToast("اگر ضبط صدا فعال نبود، با دیکته کیبورد آیفون متن را وارد کن");
+}
+
+function listenIntoVoiceModal() {
   if (voiceListening) {
     stopVoiceRecognition();
     return;
   }
 
   if (!SpeechRecognition) {
-    const fallback = prompt("متن تسک را بگو یا با دیکته کیبورد وارد کن:");
-    if (fallback?.trim()) applyVoiceTask(fallback, taskId);
+    showToast("مرورگر این حالت ضبط را پشتیبانی نمی کند");
+    voiceText.focus();
     return;
   }
-
   voiceRecognition = new SpeechRecognition();
   voiceRecognition.lang = "fa-IR";
   voiceRecognition.interimResults = false;
@@ -1091,7 +1330,8 @@ function startVoiceTask(taskId = null) {
       .join(" ")
       .trim();
     if (transcript) {
-      applyVoiceTask(transcript, taskId);
+      voiceText.value = transcript;
+      showToast("متن صدا آماده شد");
     } else {
       showToast("چیزی شنیده نشد");
     }
@@ -1150,6 +1390,7 @@ function parseVoiceTask(transcript) {
     area: detectSpeechArea(raw),
     due: detectSpeechDate(raw),
     time: detectSpeechTime(raw),
+    duration: detectSpeechDuration(raw),
     note: note || `متن صوتی: ${transcript.trim()}`
   };
 }
@@ -1165,7 +1406,7 @@ function normalizeSpeechText(value) {
 
 function extractSpeechSection(text, starters) {
   const starterPattern = starters.join("|");
-  const boundaryPattern = "(عنوان|اسم|اولویت|اهمیت|حوزه|دسته|وضعیت|تاریخ|زمان|برای|یادداشت|توضیح|جزئیات|نکته)";
+  const boundaryPattern = "(عنوان|اسم|اولویت|اهمیت|حوزه|دسته|وضعیت|تاریخ|زمان|ساعت|مدت|برای|یادداشت|توضیح|جزئیات|نکته)";
   const match = text.match(new RegExp(`(?:${starterPattern})\\s*[:：،-]?\\s*(.+?)(?=\\s+${boundaryPattern}\\s|$)`, "i"));
   return match ? cleanupVoiceTitle(match[1]) : "";
 }
@@ -1177,6 +1418,7 @@ function cleanupVoiceTitle(text) {
     .replace(/(?:حوزه|دسته)\s*(کاری|کار|سلامت|ورزش|یادگیری|مطالعه|شخصی|خانه|خانواده)/g, "")
     .replace(/(?:وضعیت)\s*(انجام شده|انجام شد|تمام شده|تمام شد|در حال انجام|شروع شده|برنامه ریزی|باز)/g, "")
     .replace(/(?:ساعت|زمان|راس|رأس|حدود)\s*\d{1,2}(?:(?::| و )\s*(?:\d{1,2}|نیم|ربع))?/g, "")
+    .replace(/(?:مدت|برای)\s*\d{1,3}\s*(?:دقیقه|ساعت)?/g, "")
     .replace(/(?:برای|تاریخ|زمان)\s*(امروز|فردا|پس فردا|هفته بعد|هفته آینده|ماه بعد|شنبه|یکشنبه|دوشنبه|سه شنبه|سه‌شنبه|چهارشنبه|پنجشنبه|جمعه)/g, "")
     .replace(/(?:یادداشت|توضیح|جزئیات|نکته)\s*[:：،-]?.*$/g, "")
     .replace(/[،,.؛;:]+$/g, "")
@@ -1247,6 +1489,15 @@ function detectSpeechTime(text) {
   if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return "";
 
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function detectSpeechDuration(text) {
+  const normalized = normalizeSpeechText(text);
+  const hourMatch = normalized.match(/(?:مدت|برای)\s*(\d{1,2})\s*ساعت/);
+  if (hourMatch) return clamp(Number(hourMatch[1]) * 60, 5, 1440);
+  const minuteMatch = normalized.match(/(?:مدت|برای)\s*(\d{1,3})\s*دقیقه/);
+  if (minuteMatch) return clamp(Number(minuteMatch[1]), 5, 1440);
+  return 60;
 }
 
 function containsAny(text, words) {
@@ -1322,6 +1573,7 @@ function addQuickItem(type, title, note, options = {}) {
       area: "personal",
       due: isISODate(options.due) ? options.due : todayISO(),
       time: isTime(options.time) ? options.time : "",
+      duration: normalizeDuration(options.duration),
       note
     }));
     currentView = "today";
@@ -1412,16 +1664,25 @@ function updateField(field, skipRender = false) {
     const blockId = key.split(".")[1];
     const block = note?.blocks.find((item) => item.id === blockId);
     if (block) block.text = value;
+  } else if (type === "dailyPlan") {
+    const date = field.dataset.date || todayISO();
+    getDailyPlan(date)[key] = value;
+  } else if (type === "yearPlan") {
+    getYearPlan(new Date().getFullYear())[key] = value;
   }
 
   saveState();
-  if (!skipRender && ["status", "priority", "area", "due", "time"].includes(key)) render();
+  if (!skipRender && ["status", "priority", "area", "due", "time", "duration"].includes(key)) render();
   renderSpaces();
 }
 
 function updateCollectionItem(collection, id, key, value) {
   const item = collection.find((entry) => entry.id === id);
   if (!item) return;
+  if (key === "duration") {
+    item[key] = normalizeDuration(value);
+    return;
+  }
   item[key] = key === "progress" ? Number(value) : value;
 }
 
@@ -1446,17 +1707,35 @@ function setActiveNavigation() {
 }
 
 function openQuickModal() {
-  if (typeof quickModal.showModal === "function") {
-    const quickDue = document.getElementById("quickDue");
-    const quickTime = document.getElementById("quickTime");
-    if (quickDue && !quickDue.value) quickDue.value = todayISO();
-    if (quickTime) quickTime.value = "";
-    quickModal.showModal();
-  } else {
-    const type = prompt("نوع: task, monthlyGoal, yearlyGoal, note", "task");
-    const title = prompt("عنوان");
-    if (title) addQuickItem(type || "task", title, "");
+  const quickDue = document.getElementById("quickDue");
+  const quickTime = document.getElementById("quickTime");
+  if (quickDue && !quickDue.value) quickDue.value = todayISO();
+  if (quickTime) quickTime.value = "";
+  openModal(quickModal);
+}
+
+function openModal(modal) {
+  if (!modal) return;
+  if (typeof modal.showModal === "function") {
+    if (!modal.open) modal.showModal();
+    return;
   }
+  modal.classList.add("is-fallback");
+  modal.setAttribute("open", "");
+  document.documentElement.classList.add("modal-open");
+}
+
+function closeModal(modal) {
+  if (!modal) return;
+  if (modal.classList.contains("is-fallback")) {
+    modal.removeAttribute("open");
+    modal.classList.remove("is-fallback");
+  } else if (typeof modal.close === "function" && modal.open) {
+    modal.close();
+  } else {
+    modal.removeAttribute("open");
+  }
+  document.documentElement.classList.remove("modal-open");
 }
 
 function applyTheme() {
@@ -1509,7 +1788,9 @@ function normalizeState(input) {
     monthlyGoals: Array.isArray(input.monthlyGoals) ? input.monthlyGoals.map(normalizeMonthlyGoal) : seed.monthlyGoals,
     yearlyGoals: Array.isArray(input.yearlyGoals) ? input.yearlyGoals.map(normalizeYearlyGoal) : seed.yearlyGoals,
     habits: Array.isArray(input.habits) ? input.habits.map(normalizeHabit) : seed.habits,
-    notes: Array.isArray(input.notes) ? input.notes.map(normalizeNote) : seed.notes
+    notes: Array.isArray(input.notes) ? input.notes.map(normalizeNote) : seed.notes,
+    dailyPlans: normalizeRecord(input.dailyPlans),
+    yearPlans: normalizeRecord(input.yearPlans)
   };
 }
 
@@ -1522,6 +1803,7 @@ function normalizeTask(task) {
     area: areaMap[task.area] ? task.area : "personal",
     due: isISODate(task.due) ? task.due : todayISO(),
     time: isTime(task.time) ? task.time : "",
+    duration: normalizeDuration(task.duration),
     note: task.note || ""
   };
 }
@@ -1564,6 +1846,45 @@ function normalizeNote(note) {
   };
 }
 
+function normalizeRecord(record) {
+  return record && typeof record === "object" && !Array.isArray(record) ? record : {};
+}
+
+function getDailyPlan(date) {
+  if (!state.dailyPlans) state.dailyPlans = {};
+  if (!state.dailyPlans[date]) {
+    state.dailyPlans[date] = {
+      goal1: "",
+      goal2: "",
+      goal3: "",
+      learn: "",
+      source: "",
+      challenge: "",
+      solution: "",
+      wentWell: "",
+      improve: "",
+      tomorrowFocus: ""
+    };
+  }
+  return state.dailyPlans[date];
+}
+
+function getYearPlan(year) {
+  const key = String(year);
+  if (!state.yearPlans) state.yearPlans = {};
+  if (!state.yearPlans[key]) {
+    state.yearPlans[key] = {
+      annualFocus: "",
+      healthGoal: "",
+      financeGoal: "",
+      learningGoal: "",
+      relationshipGoal: "",
+      review: ""
+    };
+  }
+  return state.yearPlans[key];
+}
+
 function createSeedState() {
   const today = todayISO();
   const tomorrow = toISO(addDays(new Date(), 1));
@@ -1585,6 +1906,7 @@ function createSeedState() {
         area: "personal",
         due: today,
         time: "06:00",
+        duration: 30,
         note: "سه خروجی مهم روز را مشخص کن."
       },
       {
@@ -1595,6 +1917,7 @@ function createSeedState() {
         area: "health",
         due: today,
         time: "07:00",
+        duration: 30,
         note: "قابل انجام و کوتاه."
       },
       {
@@ -1605,6 +1928,7 @@ function createSeedState() {
         area: "learning",
         due: tomorrow,
         time: "08:30",
+        duration: 60,
         note: "یک خلاصه در یادداشت ها بنویس."
       },
       {
@@ -1615,6 +1939,7 @@ function createSeedState() {
         area: "work",
         due: nextWeek,
         time: "09:00",
+        duration: 90,
         note: "موارد باز و تصمیم های لازم."
       }
     ],
@@ -1675,7 +2000,9 @@ function createSeedState() {
           { id: "block-3", text: "برای بکاپ گرفتن از منوی کناری خروجی بگیر و فایل JSON را نگه دار." }
         ]
       }
-    ]
+    ],
+    dailyPlans: {},
+    yearPlans: {}
   };
 }
 
@@ -1686,6 +2013,79 @@ function tasksForDate(iso) {
 function averageProgress(items) {
   if (!items.length) return 0;
   return Math.round(items.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / items.length);
+}
+
+function taskMinutes(task) {
+  return normalizeDuration(task.duration);
+}
+
+function taskDateInMonth(task, year, month) {
+  const date = parseISO(task.due);
+  return date.getFullYear() === year && date.getMonth() === month;
+}
+
+function taskDateInYear(task, year) {
+  return parseISO(task.due).getFullYear() === year;
+}
+
+function completedTasks(tasks) {
+  return tasks.filter((task) => task.status === "done");
+}
+
+function sumMinutes(tasks) {
+  return tasks.reduce((sum, task) => sum + taskMinutes(task), 0);
+}
+
+function taskStats(tasks) {
+  const colors = ["#0b4d79", "#c7a15a", "#46714e", "#8c6f2f", "#a94f64", "#2f6f67", "#3f6fae"];
+  const grouped = new Map();
+  tasks.forEach((task) => {
+    const key = task.title.trim() || "بدون عنوان";
+    const current = grouped.get(key) || { key, label: key, minutes: 0 };
+    current.minutes += taskMinutes(task);
+    grouped.set(key, current);
+  });
+  return Array.from(grouped.values())
+    .filter((item) => item.minutes > 0)
+    .sort((a, b) => b.minutes - a.minutes)
+    .slice(0, 7)
+    .map((item, index) => ({ ...item, color: colors[index % colors.length] }));
+}
+
+function areaStats(tasks) {
+  const totals = Object.keys(areaMap).map((area) => ({
+    key: area,
+    label: areaMap[area].label,
+    color: areaMap[area].color,
+    minutes: sumMinutes(tasks.filter((task) => task.area === area))
+  })).filter((item) => item.minutes > 0);
+  return totals.sort((a, b) => b.minutes - a.minutes);
+}
+
+function topArea(stats) {
+  return stats[0]?.label || "هنوز داده ای نیست";
+}
+
+function topStatLabel(stats) {
+  return stats[0]?.label || "هنوز داده ای نیست";
+}
+
+function formatDuration(minutes) {
+  const safe = normalizeDuration(minutes);
+  const hours = Math.floor(safe / 60);
+  const mins = safe % 60;
+  if (hours && mins) return `${hours}س ${mins}د`;
+  if (hours) return `${hours}س`;
+  return `${mins}د`;
+}
+
+function formatTotalDuration(minutes) {
+  if (!minutes) return "۰س";
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours && mins) return `${hours}س ${mins}د`;
+  if (hours) return `${hours}س`;
+  return `${mins}د`;
 }
 
 function noteWordCount() {
@@ -1731,6 +2131,12 @@ function isISODate(value) {
 
 function isTime(value) {
   return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function normalizeDuration(value) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes)) return 60;
+  return clamp(Math.round(minutes), 5, 1440);
 }
 
 function formatLongDate(iso) {
