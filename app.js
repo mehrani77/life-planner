@@ -13,6 +13,7 @@ const voiceForm = document.getElementById("voiceForm");
 const voiceText = document.getElementById("voiceText");
 const voiceTargetId = document.getElementById("voiceTargetId");
 const voiceListenBtn = document.getElementById("voiceListenBtn");
+const voiceStatus = document.getElementById("voiceStatus");
 const toast = document.getElementById("toast");
 const searchInput = document.getElementById("searchInput");
 const themeBtn = document.getElementById("themeBtn");
@@ -199,16 +200,28 @@ document.addEventListener("click", (event) => {
 
   switch (action.dataset.action) {
     case "add-task":
-      addTask();
+      addTask({ due: selectedPlannerDate() });
       break;
     case "add-task-for-date":
       addTask({ due: action.dataset.date || todayISO() });
       break;
     case "add-voice-task":
-      startVoiceTask();
+      startVoiceTask(null, selectedPlannerDate());
       break;
     case "voice-fill-task":
       startVoiceTask(id);
+      break;
+    case "shift-day":
+      shiftPlannerDate(Number(action.dataset.amount) || 0);
+      break;
+    case "set-today":
+      setPlannerDate(todayISO(), currentView);
+      break;
+    case "open-day-planner":
+      setPlannerDate(action.dataset.date || todayISO(), "today");
+      break;
+    case "shift-calendar-month":
+      shiftCalendarMonth(Number(action.dataset.amount) || 0);
       break;
     case "toggle-task-done":
       toggleTaskDone(id);
@@ -248,6 +261,8 @@ document.addEventListener("click", (event) => {
       break;
     case "open-calendar-day":
       state.ui.selectedCalendarDate = action.dataset.date || todayISO();
+      state.ui.selectedDate = state.ui.selectedCalendarDate;
+      state.ui.calendarMonth = monthKey(state.ui.selectedCalendarDate);
       saveState();
       render();
       break;
@@ -344,18 +359,20 @@ function renderToday() {
 }
 
 function renderDailyPlannerSheet(compact = false) {
-  const today = todayISO();
-  const todayTasks = tasksForDate(today);
-  const focusTasks = (todayTasks.length ? todayTasks : state.tasks)
+  const day = selectedPlannerDate();
+  const dayDate = parseISO(day);
+  const dayTasks = tasksForDate(day);
+  const focusTasks = dayTasks
     .slice()
-    .sort((a, b) => priorityWeight(b.priority) - priorityWeight(a.priority))
+    .sort(sortTasksForDay)
     .slice(0, 4);
-  const priorityTasks = state.tasks
+  const priorityTasks = dayTasks
     .filter((task) => task.status !== "done")
     .slice()
     .sort((a, b) => priorityWeight(b.priority) - priorityWeight(a.priority))
     .slice(0, 5);
-  const doneToday = todayTasks.filter((task) => task.status === "done").length;
+  const doneToday = dayTasks.filter((task) => task.status === "done").length;
+  const isToday = day === todayISO();
 
   return `
     <section class="planner-sheet ${compact ? "is-compact" : ""}">
@@ -368,19 +385,24 @@ function renderDailyPlannerSheet(compact = false) {
         <div class="planner-date-area">
           <div class="planner-input-row">
             <label>DATE :</label>
-            <span>${formatDateDigits(today)}</span>
+            <span>${formatDateDigits(day)}</span>
             <button class="planner-square" type="button" data-action="open-view" data-view="calendar">
               <span class="icon" data-icon="calendar"></span>
             </button>
           </div>
           <div class="planner-input-row">
             <label>MONTH :</label>
-            <span>${monthNames[new Date().getMonth()]} ${new Date().getFullYear()}</span>
+            <span>${monthNames[dayDate.getMonth()]} ${dayDate.getFullYear()}</span>
             <button class="planner-square is-muted" type="button" data-action="open-view" data-view="month">
               <span class="icon" data-icon="calendar"></span>
             </button>
           </div>
-          ${renderWeekChecklist(today)}
+          <div class="planner-day-nav" aria-label="جابه جایی روز">
+            <button type="button" data-action="shift-day" data-amount="-1">روز قبل</button>
+            <button type="button" data-action="set-today" class="${isToday ? "is-active" : ""}">امروز</button>
+            <button type="button" data-action="shift-day" data-amount="1">روز بعد</button>
+          </div>
+          ${renderWeekChecklist(day)}
         </div>
       </div>
 
@@ -389,7 +411,7 @@ function renderDailyPlannerSheet(compact = false) {
           <span class="icon" data-icon="mic"></span>
           تسک صوتی
         </button>
-        <button class="primary-button" type="button" data-action="add-task">
+        <button class="primary-button" type="button" data-action="add-task-for-date" data-date="${day}">
           <span class="icon" data-icon="plus"></span>
           تسک جدید
         </button>
@@ -398,23 +420,23 @@ function renderDailyPlannerSheet(compact = false) {
       <div class="planner-main-grid">
         <aside class="planner-left">
           ${plannerPanel("target", "TODAY'S PRIORITIES", renderPriorityLines(priorityTasks))}
-          ${plannerPanel("clock", "SCHEDULE", renderScheduleRows())}
-          ${plannerPanel("file", "UNSCHEDULED", renderUnscheduledTasks())}
+          ${plannerPanel("clock", "SCHEDULE", renderScheduleRows(day))}
+          ${plannerPanel("file", "UNSCHEDULED", renderUnscheduledTasks(day))}
         </aside>
 
         <section class="planner-center">
-          ${plannerPanel("calendar", "FOCUS TASKS", renderFocusTasks(focusTasks, doneToday, todayTasks.length), "planner-focus-panel")}
+          ${plannerPanel("calendar", "FOCUS TASKS", renderFocusTasks(focusTasks, doneToday, dayTasks.length, day), "planner-focus-panel")}
           <div class="planner-three">
-            ${plannerPanel("target", "TODAY'S GOALS", renderGoalLines())}
-            ${plannerPanel("file", "LEARN & IMPROVE", renderLearnImprove())}
-            ${plannerPanel("grid", "CHALLENGES / SOLUTIONS", renderChallenges())}
+            ${plannerPanel("target", "TODAY'S GOALS", renderGoalLines(day))}
+            ${plannerPanel("file", "LEARN & IMPROVE", renderLearnImprove(day))}
+            ${plannerPanel("grid", "CHALLENGES / SOLUTIONS", renderChallenges(day))}
           </div>
         </section>
       </div>
 
       <div class="planner-bottom-grid">
-        ${plannerPanel("grid", "HABIT TRACKER", renderPlannerHabitTracker(), "planner-habit-panel")}
-        ${plannerPanel("target", "DAILY REVIEW", renderDailyReview(), "planner-review-panel")}
+        ${plannerPanel("grid", "HABIT TRACKER", renderPlannerHabitTracker(day), "planner-habit-panel")}
+        ${plannerPanel("target", "DAILY REVIEW", renderDailyReview(day), "planner-review-panel")}
       </div>
 
       <footer class="planner-quote">DISCIPLINE TODAY, FREEDOM TOMORROW.</footer>
@@ -471,10 +493,10 @@ function renderPriorityLines(tasks) {
   `;
 }
 
-function renderScheduleRows() {
+function renderScheduleRows(date = selectedPlannerDate()) {
   const hours = Array.from({ length: 24 }, (_, index) => `${String(index).padStart(2, "0")}:00`);
   const scheduledTasks = state.tasks
-    .filter((task) => task.status !== "done" && task.due === todayISO() && isTime(task.time))
+    .filter((task) => task.status !== "done" && task.due === date && isTime(task.time))
     .sort((a, b) => a.time.localeCompare(b.time));
   return `
     <div class="schedule-table">
@@ -492,9 +514,9 @@ function renderScheduleRows() {
   `;
 }
 
-function renderUnscheduledTasks() {
+function renderUnscheduledTasks(date = selectedPlannerDate()) {
   const tasks = state.tasks
-    .filter((task) => task.status !== "done" && task.due === todayISO() && !isTime(task.time))
+    .filter((task) => task.status !== "done" && task.due === date && !isTime(task.time))
     .slice(0, 5);
   return `
     <div class="unscheduled-list">
@@ -503,17 +525,30 @@ function renderUnscheduledTasks() {
           <strong>${escapeHTML(task.title)}</strong>
           <span>${escapeHTML(priorityMap[task.priority]?.label || "متوسط")} / ${escapeHTML(areaMap[task.area]?.label || "شخصی")}</span>
         </div>
-      `).join("") : `<p class="muted-line">همه تسک های امروز زمان دارند.</p>`}
+      `).join("") : `<p class="muted-line">تسک بدون ساعت برای این روز ندارید.</p>`}
     </div>
   `;
 }
 
-function renderFocusTasks(tasks, doneToday, totalToday) {
-  const rows = tasks.length ? tasks : [createTaskDraft({ title: "تسک امروز را اضافه کن" })];
+function renderFocusTasks(tasks, doneToday, totalToday, date = selectedPlannerDate()) {
+  if (!tasks.length) {
+    return `
+      <div class="focus-done">✓ = DONE <span>${doneToday}/${totalToday || 0}</span></div>
+      <div class="focus-empty">
+        <strong>برای این روز هنوز تسکی ثبت نشده</strong>
+        <p>با دکمه زیر یک تسک مخصوص همین تاریخ بساز.</p>
+        <button class="primary-button" type="button" data-action="add-task-for-date" data-date="${date}">
+          <span class="icon" data-icon="plus"></span>
+          تسک این روز
+        </button>
+      </div>
+    `;
+  }
+
   return `
     <div class="focus-done">✓ = DONE <span>${doneToday}/${totalToday || 0}</span></div>
     <div class="focus-list">
-      ${rows.map((task, index) => `
+      ${tasks.map((task, index) => `
         <article class="focus-card">
           <button class="planner-check ${task.status === "done" ? "is-checked" : ""}" type="button" data-action="toggle-task-done" data-id="${task.id}" aria-label="انجام شد"></button>
           <div class="focus-badge ${task.area}">
@@ -545,45 +580,45 @@ function renderFocusTasks(tasks, doneToday, totalToday) {
   `;
 }
 
-function renderGoalLines() {
-  const plan = getDailyPlan(todayISO());
+function renderGoalLines(date = selectedPlannerDate()) {
+  const plan = getDailyPlan(date);
   return `
     <div class="editable-stack">
       ${[0, 1, 2].map((index) => `
         <label class="check-input-line">
           <span></span>
-          <input data-type="dailyPlan" data-date="${todayISO()}" data-field="goal${index + 1}" value="${escapeAttr(plan[`goal${index + 1}`] || "")}" placeholder="هدف ${index + 1}" />
+          <input data-type="dailyPlan" data-date="${date}" data-field="goal${index + 1}" value="${escapeAttr(plan[`goal${index + 1}`] || "")}" placeholder="هدف ${index + 1}" />
         </label>
       `).join("")}
     </div>
   `;
 }
 
-function renderLearnImprove() {
-  const plan = getDailyPlan(todayISO());
+function renderLearnImprove(date = selectedPlannerDate()) {
+  const plan = getDailyPlan(date);
   return `
     <div class="planner-lined-text editable-stack">
       <label>امروز یاد می گیرم:</label>
-      <textarea data-type="dailyPlan" data-date="${todayISO()}" data-field="learn" rows="2" placeholder="چی یاد گرفتی؟">${escapeHTML(plan.learn || "")}</textarea>
+      <textarea data-type="dailyPlan" data-date="${date}" data-field="learn" rows="2" placeholder="چی یاد گرفتی؟">${escapeHTML(plan.learn || "")}</textarea>
       <label>منبع / مرجع:</label>
-      <input data-type="dailyPlan" data-date="${todayISO()}" data-field="source" value="${escapeAttr(plan.source || "")}" placeholder="کتاب، لینک، کلاس..." />
+      <input data-type="dailyPlan" data-date="${date}" data-field="source" value="${escapeAttr(plan.source || "")}" placeholder="کتاب، لینک، کلاس..." />
     </div>
   `;
 }
 
-function renderChallenges() {
-  const plan = getDailyPlan(todayISO());
+function renderChallenges(date = selectedPlannerDate()) {
+  const plan = getDailyPlan(date);
   return `
     <div class="planner-lined-text editable-stack">
       <label>چالش های امروز:</label>
-      <textarea data-type="dailyPlan" data-date="${todayISO()}" data-field="challenge" rows="2" placeholder="مانع اصلی امروز">${escapeHTML(plan.challenge || "")}</textarea>
+      <textarea data-type="dailyPlan" data-date="${date}" data-field="challenge" rows="2" placeholder="مانع اصلی امروز">${escapeHTML(plan.challenge || "")}</textarea>
       <label>راه حل ها:</label>
-      <textarea data-type="dailyPlan" data-date="${todayISO()}" data-field="solution" rows="2" placeholder="راه حل عملی">${escapeHTML(plan.solution || "")}</textarea>
+      <textarea data-type="dailyPlan" data-date="${date}" data-field="solution" rows="2" placeholder="راه حل عملی">${escapeHTML(plan.solution || "")}</textarea>
     </div>
   `;
 }
 
-function renderPlannerHabitTracker() {
+function renderPlannerHabitTracker(date = selectedPlannerDate()) {
   const days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
   return `
     <div class="habit-sheet">
@@ -594,23 +629,23 @@ function renderPlannerHabitTracker() {
       ${state.habits.slice(0, 5).map((habit) => `
         <div class="habit-sheet-row">
           <strong>${escapeHTML(habit.title)}</strong>
-          ${lastNDates(7).map((date) => `<span class="${habit.days.includes(date) ? "is-done" : ""}"></span>`).join("")}
+          ${lastNDates(7, parseISO(date)).map((habitDate) => `<span class="${habit.days.includes(habitDate) ? "is-done" : ""}"></span>`).join("")}
         </div>
       `).join("")}
     </div>
   `;
 }
 
-function renderDailyReview() {
-  const plan = getDailyPlan(todayISO());
+function renderDailyReview(date = selectedPlannerDate()) {
+  const plan = getDailyPlan(date);
   return `
     <div class="planner-lined-text review-lines editable-stack">
       <label>چه چیزی خوب پیش رفت؟</label>
-      <textarea data-type="dailyPlan" data-date="${todayISO()}" data-field="wentWell" rows="2">${escapeHTML(plan.wentWell || "")}</textarea>
+      <textarea data-type="dailyPlan" data-date="${date}" data-field="wentWell" rows="2">${escapeHTML(plan.wentWell || "")}</textarea>
       <label>چه چیزی می تواند بهتر شود؟</label>
-      <textarea data-type="dailyPlan" data-date="${todayISO()}" data-field="improve" rows="2">${escapeHTML(plan.improve || "")}</textarea>
+      <textarea data-type="dailyPlan" data-date="${date}" data-field="improve" rows="2">${escapeHTML(plan.improve || "")}</textarea>
       <label>تمرکز فردا:</label>
-      <input data-type="dailyPlan" data-date="${todayISO()}" data-field="tomorrowFocus" value="${escapeAttr(plan.tomorrowFocus || "")}" />
+      <input data-type="dailyPlan" data-date="${date}" data-field="tomorrowFocus" value="${escapeAttr(plan.tomorrowFocus || "")}" />
     </div>
   `;
 }
@@ -845,10 +880,10 @@ function annualInput(field, label, value, multiline = false) {
 }
 
 function renderCalendar() {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth();
   const selectedDate = isISODate(state.ui.selectedCalendarDate) ? state.ui.selectedCalendarDate : todayISO();
+  const activeMonth = calendarMonthDate();
+  const year = activeMonth.getFullYear();
+  const month = activeMonth.getMonth();
   const first = new Date(year, month, 1);
   const startOffset = (first.getDay() + 1) % 7;
   const start = new Date(year, month, 1 - startOffset);
@@ -861,6 +896,11 @@ function renderCalendar() {
   return `
     ${pageHeader("Calendar", "تقویم", "نمای ماهانه برای دیدن تسک ها، موعدها و تمرکزهای روزانه.")}
     <section class="calendar-shell">
+      <div class="calendar-month-bar">
+        <button class="secondary-button" type="button" data-action="shift-calendar-month" data-amount="-1">ماه قبل</button>
+        <strong>${monthNames[month]} ${year}</strong>
+        <button class="secondary-button" type="button" data-action="shift-calendar-month" data-amount="1">ماه بعد</button>
+      </div>
       <div class="calendar-header">
         ${weekDays.map((day) => `<span>${day}</span>`).join("")}
       </div>
@@ -1159,6 +1199,9 @@ function renderSelectedCalendarDay(date) {
           <span class="icon" data-icon="plus"></span>
           تسک این روز
         </button>
+        <button class="secondary-button" type="button" data-action="open-day-planner" data-date="${date}">
+          باز کردن روز
+        </button>
       </div>
       <div class="calendar-task-list">
         ${tasks.length ? tasks.map((task) => `
@@ -1286,32 +1329,51 @@ function createTaskDraft(overrides = {}) {
 }
 
 function addTask(overrides = {}) {
-  state.tasks.unshift(createTaskDraft(overrides));
+  const due = isISODate(overrides.due) ? overrides.due : selectedPlannerDate();
+  state.tasks.unshift(createTaskDraft({ ...overrides, due }));
+  state.ui.selectedDate = due;
+  state.ui.selectedCalendarDate = due;
+  state.ui.calendarMonth = monthKey(due);
   currentView = "today";
   state.ui.currentView = "today";
   saveState();
   render();
 }
 
-function startVoiceTask(taskId = null) {
+function startVoiceTask(taskId = null, defaultDate = selectedPlannerDate()) {
   voiceTargetId.value = taskId || "";
+  voiceTargetId.dataset.defaultDate = isISODate(defaultDate) ? defaultDate : selectedPlannerDate();
   voiceText.value = "";
+  setVoiceStatus("");
+  resetVoiceListenButton();
   openModal(voiceModal);
   voiceText.focus();
-  if (!SpeechRecognition) showToast("اگر ضبط صدا فعال نبود، با دیکته کیبورد آیفون متن را وارد کن");
+  if (!SpeechRecognition) {
+    setVoiceStatus("مرورگر این مدل ضبط مستقیم را پشتیبانی نمی کند. از دیکته کیبورد آیفون داخل همین کادر استفاده کن.");
+    showToast("با دیکته کیبورد آیفون متن را وارد کن");
+  }
 }
 
-function listenIntoVoiceModal() {
+async function listenIntoVoiceModal() {
   if (voiceListening) {
     stopVoiceRecognition();
     return;
   }
 
   if (!SpeechRecognition) {
-    showToast("مرورگر این حالت ضبط را پشتیبانی نمی کند");
+    setVoiceStatus("این مرورگر تبدیل صدای مستقیم به متن را ندارد. داخل کادر متن بزن، از دکمه میکروفون کیبورد آیفون دیکته کن، بعد «ساخت تسک» را بزن.");
+    showToast("از میکروفون کیبورد آیفون استفاده کن");
     voiceText.focus();
     return;
   }
+
+  if (!window.isSecureContext && location.protocol !== "file:") {
+    setVoiceStatus("برای باز شدن میکروفون روی گوشی، برنامه باید با HTTPS اجرا شود؛ مثلا GitHub Pages. بعد از HTTPS دوباره شروع ضبط را بزن.");
+    showToast("برای میکروفون، نسخه HTTPS لازم است");
+    return;
+  }
+
+  setVoiceStatus("در حال باز کردن میکروفون... اگر پیام اجازه آمد، Allow را بزن.");
   voiceRecognition = new SpeechRecognition();
   voiceRecognition.lang = "fa-IR";
   voiceRecognition.interimResults = false;
@@ -1321,6 +1383,10 @@ function listenIntoVoiceModal() {
   voiceRecognition.addEventListener("start", () => {
     voiceListening = true;
     document.documentElement.classList.add("is-listening");
+    voiceListenBtn.classList.add("is-active");
+    voiceListenBtn.innerHTML = `<span class="icon" data-icon="mic"></span> توقف`;
+    hydrateIcons(voiceListenBtn);
+    setVoiceStatus("در حال گوش دادن... بعد از گفتن جمله چند لحظه صبر کن تا متن داخل کادر بیاید.");
     showToast("در حال گوش دادن...");
   });
 
@@ -1331,25 +1397,33 @@ function listenIntoVoiceModal() {
       .trim();
     if (transcript) {
       voiceText.value = transcript;
+      setVoiceStatus("متن صدا آماده شد. اگر درست است «ساخت تسک» را بزن؛ اگر نه، همین متن را اصلاح کن.");
       showToast("متن صدا آماده شد");
     } else {
+      setVoiceStatus("چیزی تشخیص داده نشد. دوباره ضبط کن یا از دیکته کیبورد استفاده کن.");
       showToast("چیزی شنیده نشد");
     }
   });
 
-  voiceRecognition.addEventListener("error", () => {
-    showToast("دسترسی صدا برقرار نشد");
+  voiceRecognition.addEventListener("error", (event) => {
+    const message = speechErrorMessage(event.error);
+    setVoiceStatus(message);
+    showToast(message);
   });
 
   voiceRecognition.addEventListener("end", () => {
     voiceListening = false;
+    voiceRecognition = null;
     document.documentElement.classList.remove("is-listening");
+    resetVoiceListenButton();
   });
 
   try {
     voiceRecognition.start();
   } catch (error) {
+    setVoiceStatus("ضبط صدا آماده نشد. یک بار مودال را ببند و دوباره باز کن؛ اگر باز هم نشد، داخل کادر از میکروفون کیبورد آیفون استفاده کن.");
     showToast("ضبط صدا آماده نیست");
+    resetVoiceListenButton();
   }
 }
 
@@ -1358,8 +1432,28 @@ function stopVoiceRecognition() {
   voiceRecognition.stop();
 }
 
+function speechErrorMessage(error) {
+  if (error === "not-allowed" || error === "service-not-allowed") return "اجازه تشخیص صدا داده نشد. دسترسی Microphone را فعال کن یا از دیکته کیبورد استفاده کن.";
+  if (error === "no-speech") return "صدایی تشخیص داده نشد. دوباره ضبط کن و واضح‌تر بگو.";
+  if (error === "audio-capture") return "میکروفون پیدا نشد یا توسط برنامه دیگری درگیر است.";
+  if (error === "network") return "تشخیص صدا به سرویس مرورگر وصل نشد. متن را با دیکته کیبورد وارد کن.";
+  return "تشخیص صدا کامل نشد. متن را اصلاح کن یا دوباره ضبط کن.";
+}
+
+function setVoiceStatus(message) {
+  if (voiceStatus) voiceStatus.textContent = message || "دکمه ضبط را بزن. اگر روی آیفون تبدیل صدا به متن باز نشد، داخل همین کادر از دیکته کیبورد استفاده کن.";
+}
+
+function resetVoiceListenButton() {
+  if (!voiceListenBtn) return;
+  voiceListenBtn.classList.remove("is-active");
+  voiceListenBtn.innerHTML = `<span class="icon" data-icon="mic"></span> شروع ضبط`;
+  hydrateIcons(voiceListenBtn);
+}
+
 function applyVoiceTask(transcript, taskId = null) {
-  const taskFields = parseVoiceTask(transcript);
+  const fallbackDate = isISODate(voiceTargetId.dataset.defaultDate) ? voiceTargetId.dataset.defaultDate : selectedPlannerDate();
+  const taskFields = parseVoiceTask(transcript, fallbackDate);
 
   if (taskId) {
     const task = state.tasks.find((item) => item.id === taskId);
@@ -1371,13 +1465,16 @@ function applyVoiceTask(transcript, taskId = null) {
     showToast("تسک صوتی ساخته شد");
   }
 
+  state.ui.selectedDate = taskFields.due;
+  state.ui.selectedCalendarDate = taskFields.due;
+  state.ui.calendarMonth = monthKey(taskFields.due);
   currentView = "today";
   state.ui.currentView = "today";
   saveState();
   render();
 }
 
-function parseVoiceTask(transcript) {
+function parseVoiceTask(transcript, fallbackDate = selectedPlannerDate()) {
   const raw = normalizeSpeechText(transcript);
   const note = extractSpeechSection(raw, ["یادداشت", "توضیح", "جزئیات", "نکته"]);
   const explicitTitle = extractSpeechSection(raw, ["عنوان", "اسم"]);
@@ -1388,7 +1485,7 @@ function parseVoiceTask(transcript) {
     status: detectSpeechStatus(raw),
     priority: detectSpeechPriority(raw),
     area: detectSpeechArea(raw),
-    due: detectSpeechDate(raw),
+    due: detectSpeechDate(raw, fallbackDate),
     time: detectSpeechTime(raw),
     duration: detectSpeechDuration(raw),
     note: note || `متن صوتی: ${transcript.trim()}`
@@ -1445,7 +1542,7 @@ function detectSpeechArea(text) {
   return "personal";
 }
 
-function detectSpeechDate(text) {
+function detectSpeechDate(text, fallbackDate = selectedPlannerDate()) {
   if (containsAny(text, ["پس فردا"])) return toISO(addDays(new Date(), 2));
   if (containsAny(text, ["فردا"])) return toISO(addDays(new Date(), 1));
   if (containsAny(text, ["هفته بعد", "هفته آینده"])) return toISO(addDays(new Date(), 7));
@@ -1469,7 +1566,7 @@ function detectSpeechDate(text) {
     return toISO(addDays(today, diff));
   }
 
-  return todayISO();
+  return isISODate(fallbackDate) ? fallbackDate : todayISO();
 }
 
 function detectSpeechTime(text) {
@@ -1566,16 +1663,20 @@ function addNoteBlock(noteId) {
 
 function addQuickItem(type, title, note, options = {}) {
   if (type === "task") {
+    const due = isISODate(options.due) ? options.due : selectedPlannerDate();
     state.tasks.unshift(createTaskDraft({
       title,
       status: "planned",
       priority: "medium",
       area: "personal",
-      due: isISODate(options.due) ? options.due : todayISO(),
+      due,
       time: isTime(options.time) ? options.time : "",
       duration: normalizeDuration(options.duration),
       note
     }));
+    state.ui.selectedDate = due;
+    state.ui.selectedCalendarDate = due;
+    state.ui.calendarMonth = monthKey(due);
     currentView = "today";
   } else if (type === "monthlyGoal") {
     state.monthlyGoals.unshift({ id: uid("month"), title, note, progress: 0 });
@@ -1700,6 +1801,48 @@ function renderSpaces() {
   spaceList.innerHTML = counts;
 }
 
+function selectedPlannerDate() {
+  if (!isISODate(state.ui.selectedDate)) state.ui.selectedDate = todayISO();
+  return state.ui.selectedDate;
+}
+
+function setPlannerDate(date, view = currentView) {
+  const safeDate = isISODate(date) ? date : todayISO();
+  state.ui.selectedDate = safeDate;
+  state.ui.selectedCalendarDate = safeDate;
+  state.ui.calendarMonth = monthKey(safeDate);
+  currentView = view || currentView;
+  state.ui.currentView = currentView;
+  saveState();
+  render();
+}
+
+function shiftPlannerDate(amount) {
+  const next = toISO(addDays(parseISO(selectedPlannerDate()), amount));
+  setPlannerDate(next, currentView);
+}
+
+function calendarMonthDate() {
+  const key = isMonthKey(state.ui.calendarMonth)
+    ? state.ui.calendarMonth
+    : monthKey(state.ui.selectedCalendarDate || todayISO());
+  const [year, month] = key.split("-").map(Number);
+  return new Date(year, month - 1, 1);
+}
+
+function shiftCalendarMonth(amount) {
+  const next = addMonths(calendarMonthDate(), amount);
+  state.ui.calendarMonth = monthKey(next);
+  saveState();
+  render();
+}
+
+function sortTasksForDay(a, b) {
+  const timeCompare = String(a.time || "99:99").localeCompare(String(b.time || "99:99"));
+  if (timeCompare !== 0) return timeCompare;
+  return priorityWeight(b.priority) - priorityWeight(a.priority);
+}
+
 function setActiveNavigation() {
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.view === currentView);
@@ -1709,7 +1852,7 @@ function setActiveNavigation() {
 function openQuickModal() {
   const quickDue = document.getElementById("quickDue");
   const quickTime = document.getElementById("quickTime");
-  if (quickDue && !quickDue.value) quickDue.value = todayISO();
+  if (quickDue && !quickDue.value) quickDue.value = selectedPlannerDate();
   if (quickTime) quickTime.value = "";
   openModal(quickModal);
 }
@@ -1727,6 +1870,7 @@ function openModal(modal) {
 
 function closeModal(modal) {
   if (!modal) return;
+  if (modal === voiceModal && voiceListening) stopVoiceRecognition();
   if (modal.classList.contains("is-fallback")) {
     modal.removeAttribute("open");
     modal.classList.remove("is-fallback");
@@ -1781,9 +1925,13 @@ function saveState() {
 
 function normalizeState(input) {
   const seed = createSeedState();
+  const ui = { ...seed.ui, ...(input.ui || {}) };
+  if (!isISODate(ui.selectedDate)) ui.selectedDate = todayISO();
+  if (!isISODate(ui.selectedCalendarDate)) ui.selectedCalendarDate = ui.selectedDate;
+  if (!isMonthKey(ui.calendarMonth)) ui.calendarMonth = monthKey(ui.selectedCalendarDate);
   return {
     version: 1,
-    ui: { ...seed.ui, ...(input.ui || {}) },
+    ui,
     tasks: Array.isArray(input.tasks) ? input.tasks.map(normalizeTask) : seed.tasks,
     monthlyGoals: Array.isArray(input.monthlyGoals) ? input.monthlyGoals.map(normalizeMonthlyGoal) : seed.monthlyGoals,
     yearlyGoals: Array.isArray(input.yearlyGoals) ? input.yearlyGoals.map(normalizeYearlyGoal) : seed.yearlyGoals,
@@ -1895,7 +2043,10 @@ function createSeedState() {
       currentView: "dashboard",
       taskView: "table",
       activeNoteId: "note-welcome",
-      theme: "light"
+      theme: "light",
+      selectedDate: today,
+      selectedCalendarDate: today,
+      calendarMonth: monthKey(today)
     },
     tasks: [
       {
@@ -2101,8 +2252,8 @@ function priorityWeight(priority) {
   return { low: 1, medium: 2, high: 3 }[priority] || 0;
 }
 
-function lastNDates(count) {
-  return Array.from({ length: count }, (_, index) => toISO(addDays(new Date(), index - count + 1)));
+function lastNDates(count, endDate = new Date()) {
+  return Array.from({ length: count }, (_, index) => toISO(addDays(endDate, index - count + 1)));
 }
 
 function todayISO() {
@@ -2125,8 +2276,23 @@ function addDays(date, days) {
   return next;
 }
 
+function addMonths(date, amount) {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + amount, 1);
+  return next;
+}
+
 function isISODate(value) {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T00:00:00`).getTime());
+}
+
+function monthKey(value) {
+  const date = value instanceof Date ? value : parseISO(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function isMonthKey(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}$/.test(value);
 }
 
 function isTime(value) {

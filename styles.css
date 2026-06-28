@@ -1048,6 +1048,22 @@ input[type="checkbox"] {
   overflow: hidden;
 }
 
+.calendar-month-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.calendar-month-bar strong {
+  text-align: center;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 900;
+}
+
 .calendar-header,
 .calendar-grid {
   display: grid;
@@ -1367,7 +1383,24 @@ input[type="checkbox"] {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.voice-status {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.voice-status::before {
+  content: "وضعیت: ";
+  color: var(--ink);
+  font-weight: 800;
 }
 
 .toast {
@@ -1782,6 +1815,28 @@ input[type="checkbox"] {
   margin: 12px 0 16px;
 }
 
+.planner-day-nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.planner-day-nav button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.planner-day-nav button.is-active {
+  border-color: transparent;
+  background: var(--gold-soft);
+  color: var(--navy);
+}
+
 .planner-main-grid {
   display: grid;
   grid-template-columns: minmax(250px, 0.48fr) minmax(0, 1fr);
@@ -1961,6 +2016,21 @@ input[type="checkbox"] {
 
 .focus-list {
   display: grid;
+}
+
+.focus-empty {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  min-height: 170px;
+  padding: 18px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+
+.focus-empty p {
+  margin: 0;
+  color: var(--muted);
 }
 
 .focus-card {
