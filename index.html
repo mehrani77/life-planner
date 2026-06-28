@@ -182,12 +182,16 @@
         <input id="voiceTargetId" name="targetId" type="hidden" />
         <label>
           متن تسک
-          <textarea id="voiceText" rows="4" placeholder="مثلا: عنوان تماس با علی برای فردا ساعت ۱۴:۳۰ مدت ۳۰ دقیقه اولویت بالا حوزه کار توضیح پیگیری قرارداد"></textarea>
+          <textarea id="voiceText" rows="4" autocomplete="off" autocapitalize="sentences" enterkeyhint="done" placeholder="مثلا: عنوان تماس با علی برای فردا ساعت ۱۴:۳۰ مدت ۳۰ دقیقه اولویت بالا حوزه کار توضیح پیگیری قرارداد"></textarea>
         </label>
         <p class="voice-status" id="voiceStatus" aria-live="polite">
-          دکمه شروع ضبط را بزن. اگر روی آیفون پنجره میکروفون باز نشد، داخل همین کادر بزن و از میکروفون کیبورد آیفون دیکته کن.
+          روی آیفون اول «دیکته آیفون» را بزن، بعد از میکروفون کیبورد متن را بگو. اگر مرورگرت پشتیبانی کند، «شروع ضبط» هم ضبط مستقیم را امتحان می کند.
         </p>
         <div class="modal-actions">
+          <button class="secondary-button voice-dictate-button" type="button" id="voiceDictateBtn">
+            <span class="icon" data-icon="mic"></span>
+            دیکته آیفون
+          </button>
           <button class="secondary-button" type="button" id="voiceListenBtn">
             <span class="icon" data-icon="mic"></span>
             شروع ضبط

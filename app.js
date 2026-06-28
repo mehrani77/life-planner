@@ -13,6 +13,7 @@ const voiceForm = document.getElementById("voiceForm");
 const voiceText = document.getElementById("voiceText");
 const voiceTargetId = document.getElementById("voiceTargetId");
 const voiceListenBtn = document.getElementById("voiceListenBtn");
+const voiceDictateBtn = document.getElementById("voiceDictateBtn");
 const voiceStatus = document.getElementById("voiceStatus");
 const toast = document.getElementById("toast");
 const searchInput = document.getElementById("searchInput");
@@ -146,6 +147,10 @@ voiceForm.addEventListener("submit", (event) => {
 
 voiceListenBtn.addEventListener("click", () => {
   listenIntoVoiceModal();
+});
+
+voiceDictateBtn.addEventListener("click", () => {
+  useKeyboardDictation();
 });
 
 themeBtn.addEventListener("click", () => {
@@ -1348,10 +1353,26 @@ function startVoiceTask(taskId = null, defaultDate = selectedPlannerDate()) {
   resetVoiceListenButton();
   openModal(voiceModal);
   voiceText.focus();
+  if (isIOSDevice()) {
+    setVoiceStatus("روی آیفون دکمه «دیکته آیفون» را بزن تا کیبورد باز شود؛ بعد میکروفون کیبورد را لمس کن و متن تسک را بگو.");
+  }
   if (!SpeechRecognition) {
     setVoiceStatus("مرورگر این مدل ضبط مستقیم را پشتیبانی نمی کند. از دیکته کیبورد آیفون داخل همین کادر استفاده کن.");
     showToast("با دیکته کیبورد آیفون متن را وارد کن");
   }
+}
+
+function useKeyboardDictation() {
+  voiceText.focus();
+  const end = voiceText.value.length;
+  try {
+    voiceText.setSelectionRange(end, end);
+  } catch (error) {
+    // Some mobile browsers do not allow programmatic selection on textarea focus.
+  }
+  voiceText.scrollIntoView({ block: "center", behavior: "smooth" });
+  setVoiceStatus("کیبورد باید باز شود. روی آیکن میکروفون کیبورد آیفون بزن، جمله را بگو، متن که آمد «ساخت تسک» را بزن.");
+  showToast("میکروفون کیبورد آیفون را بزن");
 }
 
 async function listenIntoVoiceModal() {
@@ -1441,7 +1462,7 @@ function speechErrorMessage(error) {
 }
 
 function setVoiceStatus(message) {
-  if (voiceStatus) voiceStatus.textContent = message || "دکمه ضبط را بزن. اگر روی آیفون تبدیل صدا به متن باز نشد، داخل همین کادر از دیکته کیبورد استفاده کن.";
+  if (voiceStatus) voiceStatus.textContent = message || "روی آیفون «دیکته آیفون» را بزن و از میکروفون کیبورد متن را وارد کن. «شروع ضبط» فقط در مرورگرهای پشتیبانی شده کار می کند.";
 }
 
 function resetVoiceListenButton() {
@@ -1514,9 +1535,11 @@ function cleanupVoiceTitle(text) {
     .replace(/(?:اولویت|اهمیت)\s*(بالا|زیاد|فوری|مهم|متوسط|معمولی|کم|پایین)/g, "")
     .replace(/(?:حوزه|دسته)\s*(کاری|کار|سلامت|ورزش|یادگیری|مطالعه|شخصی|خانه|خانواده)/g, "")
     .replace(/(?:وضعیت)\s*(انجام شده|انجام شد|تمام شده|تمام شد|در حال انجام|شروع شده|برنامه ریزی|باز)/g, "")
-    .replace(/(?:ساعت|زمان|راس|رأس|حدود)\s*\d{1,2}(?:(?::| و )\s*(?:\d{1,2}|نیم|ربع))?/g, "")
-    .replace(/(?:مدت|برای)\s*\d{1,3}\s*(?:دقیقه|ساعت)?/g, "")
+    .replace(/(?:مدت|به مدت)\s*(?:\d{1,3}|[آ-ی]+)\s*(?:دقیقه|ساعت)(?:\s*و\s*نیم)?/g, "")
+    .replace(/برای\s*(?:\d{1,3}|[آ-ی]+)\s*(?:دقیقه|ساعت)(?:\s*و\s*نیم)?/g, "")
+    .replace(/(?:ساعت|زمان|راس|رأس|حدود)\s*(?:\d{1,2}|[آ-ی]+)(?:(?::| و )\s*(?:\d{1,2}|[آ-ی]+|نیم|ربع))?\s*(?:صبح|ظهر|بعد از ظهر|بعدازظهر|عصر|شب)?/g, "")
     .replace(/(?:برای|تاریخ|زمان)\s*(امروز|فردا|پس فردا|هفته بعد|هفته آینده|ماه بعد|شنبه|یکشنبه|دوشنبه|سه شنبه|سه‌شنبه|چهارشنبه|پنجشنبه|جمعه)/g, "")
+    .replace(/(^|\s)(امروز|فردا|پس فردا|هفته بعد|هفته آینده|ماه بعد|ماه آینده)(?=\s|$)/g, " ")
     .replace(/(?:یادداشت|توضیح|جزئیات|نکته)\s*[:：،-]?.*$/g, "")
     .replace(/[،,.؛;:]+$/g, "")
     .replace(/\s+/g, " ")
@@ -1543,6 +1566,7 @@ function detectSpeechArea(text) {
 }
 
 function detectSpeechDate(text, fallbackDate = selectedPlannerDate()) {
+  if (containsAny(text, ["امروز"])) return todayISO();
   if (containsAny(text, ["پس فردا"])) return toISO(addDays(new Date(), 2));
   if (containsAny(text, ["فردا"])) return toISO(addDays(new Date(), 1));
   if (containsAny(text, ["هفته بعد", "هفته آینده"])) return toISO(addDays(new Date(), 7));
@@ -1573,16 +1597,18 @@ function detectSpeechTime(text) {
   const normalized = normalizeSpeechText(text);
   const explicit = normalized.match(/(?:ساعت|زمان|راس|رأس|حدود)\s*(\d{1,2})(?:(?::| و )\s*(\d{1,2}|نیم|ربع))?/);
   const compact = normalized.match(/\b(\d{1,2}):(\d{2})\b/);
-  const match = explicit || compact;
+  const spoken = normalized.match(/(?:ساعت|زمان|راس|رأس|حدود)\s*([آ-ی]+)(?:\s*و\s*([آ-ی]+|نیم|ربع))?/);
+  const match = explicit || compact || spoken;
   if (!match) return "";
 
-  let hour = Number(match[1]);
+  let hour = /^\d+$/.test(match[1]) ? Number(match[1]) : persianNumberValue(match[1]);
   let minute = 0;
   if (match[2] === "نیم") minute = 30;
   else if (match[2] === "ربع") minute = 15;
-  else if (match[2]) minute = Number(match[2]);
+  else if (match[2]) minute = /^\d+$/.test(match[2]) ? Number(match[2]) : persianNumberValue(match[2]);
 
   if (containsAny(normalized, ["بعد از ظهر", "عصر", "شب"]) && hour < 12) hour += 12;
+  if (containsAny(normalized, ["ظهر"]) && hour < 11) hour += 12;
   if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return "";
 
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
@@ -1590,15 +1616,75 @@ function detectSpeechTime(text) {
 
 function detectSpeechDuration(text) {
   const normalized = normalizeSpeechText(text);
+  if (containsAny(normalized, ["نیم ساعت", "نیم‌ساعت"])) return 30;
+  const halfHourMatch = normalized.match(/(?:مدت|برای)\s*(\d{1,2}|[آ-ی]+)\s*ساعت\s*و\s*نیم/);
+  if (halfHourMatch) {
+    const hours = /^\d+$/.test(halfHourMatch[1]) ? Number(halfHourMatch[1]) : persianNumberValue(halfHourMatch[1]);
+    if (Number.isFinite(hours)) return clamp((hours * 60) + 30, 5, 1440);
+  }
   const hourMatch = normalized.match(/(?:مدت|برای)\s*(\d{1,2})\s*ساعت/);
   if (hourMatch) return clamp(Number(hourMatch[1]) * 60, 5, 1440);
+  const spokenHourMatch = normalized.match(/(?:مدت|برای)\s*([آ-ی]+)\s*ساعت/);
+  if (spokenHourMatch) {
+    const hours = persianNumberValue(spokenHourMatch[1]);
+    if (Number.isFinite(hours)) return clamp(hours * 60, 5, 1440);
+  }
   const minuteMatch = normalized.match(/(?:مدت|برای)\s*(\d{1,3})\s*دقیقه/);
   if (minuteMatch) return clamp(Number(minuteMatch[1]), 5, 1440);
+  const spokenMinuteMatch = normalized.match(/(?:مدت|برای)\s*([آ-ی]+)\s*دقیقه/);
+  if (spokenMinuteMatch) {
+    const minutes = persianNumberValue(spokenMinuteMatch[1]);
+    if (Number.isFinite(minutes)) return clamp(minutes, 5, 1440);
+  }
   return 60;
 }
 
 function containsAny(text, words) {
   return words.some((word) => text.includes(word));
+}
+
+function persianNumberValue(value) {
+  const normalized = normalizeSpeechText(value)
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (/^\d+$/.test(normalized)) return Number(normalized);
+  const words = normalized.split(" و ").flatMap((part) => part.split(" ")).filter(Boolean);
+  const values = {
+    صفر: 0,
+    یک: 1,
+    یه: 1,
+    دو: 2,
+    سه: 3,
+    چهار: 4,
+    پنج: 5,
+    شش: 6,
+    هفت: 7,
+    هشت: 8,
+    نه: 9,
+    نُه: 9,
+    ده: 10,
+    یازده: 11,
+    دوازده: 12,
+    سیزده: 13,
+    چهارده: 14,
+    پانزده: 15,
+    شانزده: 16,
+    هفده: 17,
+    هجده: 18,
+    نوزده: 19,
+    بیست: 20,
+    سی: 30,
+    چهل: 40,
+    پنجاه: 50
+  };
+  const total = words.reduce((sum, word) => sum + (values[word] ?? NaN), 0);
+  return Number.isFinite(total) ? total : NaN;
+}
+
+function isIOSDevice() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
 function toEnglishDigits(value) {

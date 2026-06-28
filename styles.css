@@ -1403,6 +1403,12 @@ input[type="checkbox"] {
   font-weight: 800;
 }
 
+.voice-dictate-button {
+  border-color: transparent;
+  background: var(--gold-soft);
+  color: var(--navy);
+}
+
 .toast {
   position: fixed;
   z-index: 100;
